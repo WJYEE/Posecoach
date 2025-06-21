@@ -24,7 +24,6 @@ AI 기반 실시간 스쿼트 자세 교정 및 카운팅 시스템입니다. Me
 
 ```bash
 git clone <repository-url>
-cd PoseCoach
 ```
 
 ### 2. Anaconda 가상환경 생성
@@ -44,7 +43,6 @@ pip install opencv-python mediapipe tensorflow gtts pillow playsound joblib scik
 ### 4. 실행
 
 ```bash
-cd src
 python main.py
 ```
 
