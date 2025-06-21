@@ -118,9 +118,9 @@ def vertical_angle(p1, p2):
 
 def extract_pose_features(image):
     """
-    MediaPipe로 포즈 특징 추출
+    MediaPipe로 포즈 특징 추출 (성능 최적화 버전)
     - 33개 관절점에서 160개 특징 생성
-    - 기본 좌표 + 측면 각도 + 품질 점수 + 추가 특징
+    - 기본 좌표 + 핵심 각도 + 품질 점수 + 간소화된 추가 특징
     """
     results = pose.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     if not results.pose_landmarks:
@@ -128,106 +128,97 @@ def extract_pose_features(image):
 
     lm = results.pose_landmarks.landmark
     
-    # 기본 특징: x, y, z, visibility (33 × 4 = 132개)
+    # 기본 특징: x, y, z, visibility (33 × 4 = 132개) - 최적화
     basic_features = []
     for pt in lm:
         basic_features.extend([pt.x, pt.y, pt.z, pt.visibility])
     
-    # 주요 관절점 좌표 추출
-    points = {
-        'nose': [lm[0].x, lm[0].y],
-        'left_ear': [lm[7].x, lm[7].y],
-        'right_ear': [lm[8].x, lm[8].y],
-        'left_shoulder': [lm[11].x, lm[11].y],
-        'right_shoulder': [lm[12].x, lm[12].y],
-        'left_elbow': [lm[13].x, lm[13].y],
-        'right_elbow': [lm[14].x, lm[14].y],
-        'left_wrist': [lm[15].x, lm[15].y],
-        'right_wrist': [lm[16].x, lm[16].y],
-        'left_hip': [lm[23].x, lm[23].y],
-        'right_hip': [lm[24].x, lm[24].y],
-        'left_knee': [lm[25].x, lm[25].y],
-        'right_knee': [lm[26].x, lm[26].y],
-        'left_ankle': [lm[27].x, lm[27].y],
-        'right_ankle': [lm[28].x, lm[28].y]
-    }
-    
-    # 중앙점 계산
-    center_ear = [(points['left_ear'][0] + points['right_ear'][0])/2, 
-                  (points['left_ear'][1] + points['right_ear'][1])/2]
-    center_shoulder = [(points['left_shoulder'][0] + points['right_shoulder'][0])/2, 
-                       (points['left_shoulder'][1] + points['right_shoulder'][1])/2]
-    center_hip = [(points['left_hip'][0] + points['right_hip'][0])/2, 
-                  (points['left_hip'][1] + points['right_hip'][1])/2]
-    
-    # 측면 각도 특징 (기존 11개)
+    # 핵심 관절점만 추출 (성능 최적화)
     try:
+        # 간소화된 포인트 추출
+        nose = [lm[0].x, lm[0].y]
+        left_ear = [lm[7].x, lm[7].y]
+        right_ear = [lm[8].x, lm[8].y]
+        left_shoulder = [lm[11].x, lm[11].y]
+        right_shoulder = [lm[12].x, lm[12].y]
+        left_elbow = [lm[13].x, lm[13].y]
+        right_elbow = [lm[14].x, lm[14].y]
+        left_wrist = [lm[15].x, lm[15].y]
+        right_wrist = [lm[16].x, lm[16].y]
+        left_hip = [lm[23].x, lm[23].y]
+        right_hip = [lm[24].x, lm[24].y]
+        left_knee = [lm[25].x, lm[25].y]
+        right_knee = [lm[26].x, lm[26].y]
+        left_ankle = [lm[27].x, lm[27].y]
+        right_ankle = [lm[28].x, lm[28].y]
+        
+        # 중앙점 계산 (간소화)
+        center_ear = [(left_ear[0] + right_ear[0])/2, (left_ear[1] + right_ear[1])/2]
+        center_shoulder = [(left_shoulder[0] + right_shoulder[0])/2, (left_shoulder[1] + right_shoulder[1])/2]
+        center_hip = [(left_hip[0] + right_hip[0])/2, (left_hip[1] + right_hip[1])/2]
+        
+        # 핵심 측면 각도 특징 (11개) - 기존과 동일하지만 최적화
         lateral_features = [
             vertical_angle(center_ear, center_shoulder),                    # 목 기울기
-            safe_angle(points['nose'], center_ear, center_shoulder),        # 머리 각도
-            safe_angle(points['left_shoulder'], points['left_elbow'], points['left_wrist']),  # 왼팔 각도
-            points['left_shoulder'][0] - center_ear[0],                     # 어깨-귀 수평 거리
+            safe_angle(nose, center_ear, center_shoulder),                  # 머리 각도
+            safe_angle(left_shoulder, left_elbow, left_wrist),              # 왼팔 각도
+            left_shoulder[0] - center_ear[0],                               # 어깨-귀 수평 거리
             vertical_angle(center_shoulder, center_hip),                    # 상체 기울기
-            safe_angle(center_shoulder, center_hip, points['left_knee']),   # 엉덩이 각도
-            safe_angle(center_hip, points['left_knee'], points['left_ankle']),  # 무릎 각도
-            vertical_angle(center_hip, points['left_knee']),                # 허벅지 기울기
-            safe_angle(center_hip, points['right_knee'], points['right_ankle']), # 오른쪽 무릎 각도
-            vertical_angle(center_ear, points['left_ankle']),               # 전체 몸 기울기
-            center_ear[0] - points['left_ankle'][0]                         # 머리-발목 수평 거리
+            safe_angle(center_shoulder, center_hip, left_knee),             # 엉덩이 각도
+            safe_angle(center_hip, left_knee, left_ankle),                  # 왼쪽 무릎 각도
+            vertical_angle(center_hip, left_knee),                          # 허벅지 기울기
+            safe_angle(center_hip, right_knee, right_ankle),                # 오른쪽 무릎 각도
+            vertical_angle(center_ear, left_ankle),                         # 전체 몸 기울기
+            center_ear[0] - left_ankle[0]                                   # 머리-발목 수평 거리
         ]
-    except Exception as e:
-        print(f"측면 특징 계산 오류: {e}")
-        lateral_features = [0, 180, 180, 0, 0, 180, 180, 0, 180, 0, 0]
-    
-    # 품질 점수 특징 (기존 4개)
-    try:
+        
+        # 품질 점수 특징 (4개) - 기존과 동일
         quality_scores = [
             max(0, min(1, (lateral_features[1] - 120) / 60)),      # 머리 각도 품질
             max(0, min(1, (lateral_features[2] - 120) / 60)),      # 팔 각도 품질
             max(0, min(1, 1 - abs(lateral_features[4]) / 45)),     # 상체 기울기 품질
             max(0, min(1, 1 - abs(lateral_features[10]) / 0.35))   # 전체 균형 품질
         ]
-    except:
-        quality_scores = [0.7, 0.7, 0.7, 0.7]  # 기본값
-    
-    # 추가 특징 (13개) - 160차원 달성을 위해
-    try:
+        
+        # 간소화된 추가 특징 (13개) - 계산 최적화
         additional_features = [
-            # 좌우 대칭성 특징 (5개)
-            abs(points['left_shoulder'][1] - points['right_shoulder'][1]),  # 어깨 높이 차이
-            abs(points['left_hip'][1] - points['right_hip'][1]),           # 골반 높이 차이
-            abs(points['left_knee'][1] - points['right_knee'][1]),         # 무릎 높이 차이
-            abs(points['left_ankle'][1] - points['right_ankle'][1]),       # 발목 높이 차이
-            abs((points['left_shoulder'][0] + points['left_hip'][0])/2 - 
-                (points['right_shoulder'][0] + points['right_hip'][0])/2),  # 몸통 좌우 균형
+            # 대칭성 특징 (간소화, 5개)
+            abs(left_shoulder[1] - right_shoulder[1]),                      # 어깨 높이 차이
+            abs(left_hip[1] - right_hip[1]),                               # 골반 높이 차이
+            abs(left_knee[1] - right_knee[1]),                             # 무릎 높이 차이
+            abs(left_ankle[1] - right_ankle[1]),                           # 발목 높이 차이
+            abs(center_shoulder[0] - center_hip[0]),                       # 몸통 중심 정렬
             
-            # 거리 특징 (4개)
-            np.sqrt((center_shoulder[0] - center_hip[0])**2 + (center_shoulder[1] - center_hip[1])**2),  # 어깨-골반 거리
-            np.sqrt((center_hip[0] - points['left_knee'][0])**2 + (center_hip[1] - points['left_knee'][1])**2),  # 골반-무릎 거리
-            np.sqrt((points['left_knee'][0] - points['left_ankle'][0])**2 + (points['left_knee'][1] - points['left_ankle'][1])**2),  # 무릎-발목 거리
-            np.sqrt((points['left_shoulder'][0] - points['right_shoulder'][0])**2 + (points['left_shoulder'][1] - points['right_shoulder'][1])**2),  # 어깨 폭
+            # 핵심 거리 특징 (4개)
+            abs(center_shoulder[1] - center_hip[1]),                       # 어깨-골반 세로 거리
+            abs(center_hip[1] - left_knee[1]),                            # 골반-무릎 세로 거리
+            abs(left_knee[1] - left_ankle[1]),                            # 무릎-발목 세로 거리
+            abs(left_shoulder[0] - right_shoulder[0]),                     # 어깨 폭
             
-            # 각도 특징 (4개)
-            safe_angle(points['right_shoulder'], points['right_elbow'], points['right_wrist']),  # 오른팔 각도
-            safe_angle(center_shoulder, points['left_hip'], points['left_knee']),               # 왼쪽 몸통-다리 각도
-            safe_angle(center_shoulder, points['right_hip'], points['right_knee']),             # 오른쪽 몸통-다리 각도
-            safe_angle(points['left_knee'], points['left_ankle'], [points['left_ankle'][0], points['left_ankle'][1]-0.1])  # 발목 각도
+            # 핵심 각도 특징 (4개)
+            safe_angle(right_shoulder, right_elbow, right_wrist),          # 오른팔 각도
+            safe_angle(center_shoulder, left_hip, left_knee),              # 왼쪽 몸통-다리 각도
+            safe_angle(center_shoulder, right_hip, right_knee),            # 오른쪽 몸통-다리 각도
+            vertical_angle(left_knee, left_ankle)                          # 발목 각도 (간소화)
         ]
+        
     except Exception as e:
-        print(f"추가 특징 계산 오류: {e}")
-        additional_features = [0.0] * 13  # 13개 기본값
+        print(f"특징 계산 오류: {e}")
+        # 오류 시 기본값으로 빠르게 처리
+        lateral_features = [0, 180, 180, 0, 0, 180, 180, 0, 180, 0, 0]
+        quality_scores = [0.7, 0.7, 0.7, 0.7]
+        additional_features = [0.0] * 13
     
     # 전체 특징 결합: 132 + 11 + 4 + 13 = 160개
     all_features = basic_features + lateral_features + quality_scores + additional_features
     
+    # 160차원 보장 (빠른 처리)
     if len(all_features) != 160:
-        print(f"특징 개수 불일치: {len(all_features)} (예상: 160)")
-        # 160차원에 맞추기 위한 패딩 또는 트림
         if len(all_features) < 160:
             all_features.extend([0.0] * (160 - len(all_features)))
         else:
             all_features = all_features[:160]
-        
+    
     return np.array(all_features, dtype=np.float32).reshape(1, -1), results.pose_landmarks
 
 class SquatSession:
@@ -269,7 +260,7 @@ class SquatSession:
         """
         라벨 업데이트 및 카운팅 로직
         - 쿨다운 시스템으로 중복 카운트 방지
-        - 운동 상태 전환 감지
+        - 운동 상태 전환 감지 (Stand -> 운동 -> Stand 패턴만 카운트)
         """
         self.frame_count += 1
         self.label_counts[label] += 1
@@ -279,25 +270,33 @@ class SquatSession:
             self.counting_cooldown -= 1
         
         is_exercising = label in [1, 2, 3, 4]  # 0번(시작자세) 제외
+        is_standing = label == 0  # 시작자세(서있는 상태)
         
-        # 카운트 조건: 운동 상태로 전환 + 쿨다운 완료
+        # 카운트 조건 강화: Stand 상태에서 운동 상태로 전환할 때만 카운트
         should_count = False
-        if (is_exercising and not self.prev_exercising and 
+        if (is_exercising and self.prev_exercising == False and 
             label != 0 and self.counting_cooldown == 0):
             
-            should_count = True
-            self.count += 1
-            self.exercise_labels.append(label)
-            self.counting_cooldown = 15  # 15프레임 쿨다운 (약 0.5초)
+            # 추가 조건: 최근에 Stand 상태가 있었는지 확인
+            recent_stand = False
+            if hasattr(self, 'recent_predictions') and len(self.recent_predictions) > 0:
+                recent_stand = 0 in self.recent_predictions[-3:]  # 최근 3개 중 Stand가 있었는지
             
-            # 점수 계산
-            if label == 1:          # 정상자세
-                self.perfect += 1
-                self.score_log.append(1.0)
-            elif label in [2, 3]:   # 단일 문제
-                self.score_log.append(0.5)
-            elif label == 4:        # 복합 문제
-                self.score_log.append(0.0)
+            # Stand -> 운동 전환일 때만 카운트
+            if recent_stand or not hasattr(self, 'recent_predictions'):
+                should_count = True
+                self.count += 1
+                self.exercise_labels.append(label)
+                self.counting_cooldown = 10  # 10프레임 쿨다운
+                
+                # 점수 계산
+                if label == 1:          # 정상자세
+                    self.perfect += 1
+                    self.score_log.append(1.0)
+                elif label in [2, 3]:   # 단일 문제
+                    self.score_log.append(0.5)
+                elif label == 4:        # 복합 문제
+                    self.score_log.append(0.0)
         
         self.prev_exercising = is_exercising
         
@@ -450,8 +449,8 @@ def run():
                 
             frame_count += 1
 
-            # 5프레임마다 분석 (성능 최적화)
-            if frame_count % 5 == 0:
+            # 3프레임마다 분석 (성능 최적화 - 5에서 3으로 변경)
+            if frame_count % 3 == 0:
                 feature, landmarks = extract_pose_features(frame)
                 
                 if feature is not None:
@@ -461,23 +460,26 @@ def run():
                         pred_class = int(np.argmax(pred_proba))
                         confidence = float(np.max(pred_proba))
                         
-                        # 예측 안정화 (신뢰도 기반 보정)
-                        if confidence < 0.75 and pred_class in [2, 3, 4]:
-                            pred_class = 1  # 낮은 신뢰도면 정상자세로
+                        # 예측 안정화 (상체만 보일 때 Stand로 보정)
+                        if confidence < 0.7:
+                            pred_class = 0  # 신뢰도 낮으면 Stand 상태로
                         
                         # 최근 예측 버퍼 관리
                         if not hasattr(session, 'recent_predictions'):
                             session.recent_predictions = []
                         
                         session.recent_predictions.append(pred_class)
-                        if len(session.recent_predictions) > 5:
+                        if len(session.recent_predictions) > 3:  # 버퍼 크기 축소 (5->3)
                             session.recent_predictions.pop(0)
                         
-                        # 다수결 방식으로 최종 라벨 결정
-                        if len(session.recent_predictions) >= 3:
+                        # 다수결 방식으로 최종 라벨 결정 (Stand 우선)
+                        if len(session.recent_predictions) >= 2:
                             most_common = Counter(session.recent_predictions).most_common(1)[0]
-                            if most_common[1] >= 2:  # 3개 중 2개 이상
+                            if most_common[1] >= 2:
                                 pred_class = most_common[0]
+                            # Stand가 포함되어 있으면 우선 적용
+                            elif 0 in session.recent_predictions:
+                                pred_class = 0
                         
                         # 세션 업데이트
                         feedback, should_count, set_done = session.update(pred_class)
